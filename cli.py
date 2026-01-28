@@ -284,22 +284,22 @@ class Phase:
             ret += " Retreats"
         return ret
 
+_phase_map: dict[str, tuple[Season, PhaseType, Season, PhaseType]] = {
+    's': (S.SPRING, P.MOVES, S.SPRING, P.RETREATS),
+    'sr': (S.SPRING, P.RETREATS, S.FALL, P.MOVES),
+    'f': (S.FALL, P.MOVES, S.FALL, P.RETREATS),
+    'fr': (S.FALL, P.RETREATS, S.WINTER, P.ADJUSTMENTS),
+    'w': (S.WINTER, P.ADJUSTMENTS, S.SPRING, P.MOVES),
+}
+
 @dataclass
 class CurrentPhase(Phase):
     nxt: Phase
 
-    _phase_map: dict[str, tuple[Season, PhaseType, Season, PhaseType]] = {
-        's': (S.SPRING, P.MOVES, S.SPRING, P.RETREATS),
-        'sr': (S.SPRING, P.RETREATS, S.FALL, P.MOVES),
-        'f': (S.FALL, P.MOVES, S.FALL, P.RETREATS),
-        'fr': (S.FALL, P.RETREATS, S.WINTER, P.ADJUSTMENTS),
-        'w': (S.WINTER, P.ADJUSTMENTS, S.SPRING, P.MOVES),
-    }
-
     @staticmethod
     def create_phase(phase_key: str, year: int):
         k = phase_key.strip().lower()
-        cur_season, cur_type, nxt_season, nxt_type = CurrentPhase._phase_map[k]
+        cur_season, cur_type, nxt_season, nxt_type = _phase_map[k]
         return CurrentPhase(
             cur_season,
             year,
@@ -400,6 +400,8 @@ def _adju(
     for line in lines[:-1]:
         frame = tk.Frame(root)
         frame.pack(fill=tk.X, padx=5, pady=5)
+        checkbox = tk.Checkbutton(frame, variable=tk.BooleanVar())
+        checkbox.pack(side=tk.LEFT)
         
         label = tk.Label(frame, text=line, wraplength=400, justify=tk.LEFT)
         label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
