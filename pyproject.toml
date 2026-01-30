@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dipgm"
+version = "0.1.0"
+
+[project.scripts]
+dipgm = "dipgm.cli:cli"

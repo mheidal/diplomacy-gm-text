@@ -1,2 +1,4 @@
 data.pickle*
 .vscode
+dipgm.egg-info*
+build*

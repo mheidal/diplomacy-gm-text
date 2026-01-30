@@ -1,6 +1,6 @@
 import datetime as dt
 from enum import Enum
-from typing import Optional, Self
+from typing import Optional
 from zoneinfo import ZoneInfo
 import click
 from click import echo, group, argument, option
@@ -9,6 +9,7 @@ from pathlib import Path
 from pickle import load, dump
 import pytz
 import tkinter as tk
+from platformdirs import user_data_dir
 
 @dataclass
 class GameConfigDefaults:
@@ -53,8 +54,11 @@ class Data:
                 raise ValueError(f"No game called {name}")
         return self.games[name]
 
-def get_datapath() -> Path:
-    return Path("data.pickle")
+APP_NAME = "dipgm"
+DATA_DIR = Path(user_data_dir(APP_NAME))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_FILE = DATA_DIR / "data.pickle"
+
 
 def initialize_data(path: Path):
     data = Data()
@@ -63,7 +67,7 @@ def initialize_data(path: Path):
     return data
 
 def load_data() -> Data:
-    path = get_datapath()
+    path = DATA_FILE
     try:
         with open(path, 'rb') as f:
             data = load(f)
@@ -74,7 +78,7 @@ def load_data() -> Data:
         return initialize_data(path)
 
 def save_data(data: Data):
-    path = get_datapath()
+    path = DATA_FILE
     with open(path, 'wb') as f:
         dump(data, f)
 
@@ -92,16 +96,25 @@ def tz_is_valid(tz: str) -> bool:
     return tz in pytz.all_timezones
 
 
+ARGUMENT_HELP_STRINGS = {
+    "time": "Adjudication time of day, in 24 hour time (e.g. -t 16:00)",
+    "timezone": "Time zone for adjudication time, from tz time zones (e.g. -z America/Los Angeles)",
+    "phase-lengths": "Phase lengths, in days (moves, retreats, adjustments)",
+    "nicknames": "List of alternate names which can be invoked to refer to this game",
+    "name": "Full name or nickname of game to ",
+}
+
+
 @group()
 def cli():
     pass
 
 @cli.command()
-@argument('name')
-@option('--time', '-t')
-@option('--timezone', '-z')
-@option('--phase-lengths', '-p', nargs=3, type=tuple[int, int, int], help="Phase lengths, in days (moves, retreats, adjustments)")
-@option('--nicknames', '-n', multiple=True)
+@argument('name', help="Full name of game")
+@option('--time', '-t', help=ARGUMENT_HELP_STRINGS["time"])
+@option('--timezone', '-z', help=ARGUMENT_HELP_STRINGS["timezone"])
+@option('--phase-lengths', '-p', nargs=3, type=tuple[int, int, int], help=ARGUMENT_HELP_STRINGS['phase-lengths'])
+@option('--nicknames', '-n', multiple=True, help=ARGUMENT_HELP_STRINGS['nicknames'])
 def create_game(
     name: str,
     time: Optional[str] = None,
@@ -126,13 +139,12 @@ def create_game(
     data.games[name] = game
 
     if nicknames is not None:
-        for nickname in nicknames:
-            _set_nickname(data, name, nickname)
+        set_nicknames(nicknames)
     save_data(data)
 
 
 @cli.command()
-@argument('name')
+@argument('name', help=ARGUMENT_HELP_STRINGS["name"] + "delete")
 def delete_game(name: str):
     data = load_data()
     try:
@@ -160,7 +172,7 @@ def view_games():
 
 
 @cli.command()
-@argument('name')
+@argument('name', help=ARGUMENT_HELP_STRINGS["name"] + "view")
 def view_game(name: str):
     data = load_data()
     game = data.get_game(name)
@@ -174,12 +186,12 @@ def _view_game(data: Data, game: Game):
             echo(f'\t-"{nickname}"')
 
 @cli.command()
-@argument('name')
-@option('--adju-time', '-t')
-@option('--adju-tz', '-z')
-@option('--moves-length', '-m', type=int)
-@option('--retreats-length', '-r', type=int)
-@option('--adjustments-length', '-a', type=int)
+@argument('name', help=ARGUMENT_HELP_STRINGS["name"] + "edit")
+@option('--adju-time', '-t', help=ARGUMENT_HELP_STRINGS['time'])
+@option('--adju-tz', '-z', help=ARGUMENT_HELP_STRINGS['timezone'])
+@option('--moves-length', '-m', type=int, help="Length of move phases (days)")
+@option('--retreats-length', '-r', type=int, help="Length of retreat phases (days)")
+@option('--adjustments-length', '-a', type=int, help="Length of adjustment phases (days)")
 def edit_game(
     name: str,
     adju_time: Optional[str] = None,
@@ -203,16 +215,18 @@ def edit_game(
     save_data(data)
 
 
-def _set_nickname(data: Data, full_name: str, nickname: str):
-    data.nicknames[nickname] = full_name
+def _set_nicknames(data: Data, name: str, nicknames: list[str]):
+    for nickname in nicknames:
+        data.nicknames[nickname] = name
 
 
 @cli.command()
-@argument('full_name')
-@argument('nickname')
-def set_nickname(full_name: str, nickname: str):
+@argument('name', help=ARGUMENT_HELP_STRINGS['name'])
+@argument('nicknames', multiple=True, help=ARGUMENT_HELP_STRINGS['nicknames'])
+def set_nicknames(name: str, nicknames: list[str]):
     data = load_data()
-    _set_nickname(data, full_name, nickname)
+    game = data.get_game(name)
+    _set_nicknames(data, game.name, nicknames)
     save_data(data)
 
 
