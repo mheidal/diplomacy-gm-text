@@ -14,7 +14,8 @@ from platformdirs import user_data_dir
 from dipgm.models.option_spec import OptionSpec
 from dipgm.models.phase import CurrentPhase, PhaseType
 from dipgm.models.scheduled_command import ScheduledCommand
-from models.param_types import TIMEDELTA
+from dipgm.models.param_types import TIMEDELTA
+from dipgm.utils import convert_string_to_timedelta
 
 
 @dataclass
@@ -24,7 +25,7 @@ class GameConfigDefaults:
     move_length: dt.timedelta = dt.timedelta(days=2)
     retreat_length: dt.timedelta = dt.timedelta(days=1)
     adjustment_length: dt.timedelta = dt.timedelta(days=1)
-    scheduled_commands: list[ScheduledCommand] = []
+    scheduled_commands: list[ScheduledCommand] = field(default_factory=list)
 
 @dataclass
 class GameConfigUpdates:
@@ -42,6 +43,7 @@ class Game(GameConfigDefaults):
         name: str,
     ):
         self.name = name
+        self.scheduled_commands = []
 
     def apply_updates(self, updates: GameConfigUpdates):
         for field_ in fields(updates):
@@ -130,12 +132,12 @@ GAME_UPDATE_OPTIONS: list[OptionSpec] = [
         option('--adju-time', '-t', help=ARGUMENT_HELP_STRINGS["adju-time"])
     ),
     OptionSpec(
-        "timezone",
-        option('--timezone', '-z', help=ARGUMENT_HELP_STRINGS["timezone"])
+        "adju_tz",
+        option('--adju_tz', '-z', help=ARGUMENT_HELP_STRINGS["timezone"])
     ),
     OptionSpec(
         "phase-lengths",
-        option('--phase-lengths', '-p', nargs=3, type=tuple[TIMEDELTA, TIMEDELTA, TIMEDELTA], help=ARGUMENT_HELP_STRINGS['phase-lengths'] + ARGUMENT_HELP_STRINGS['time-delta-format'])
+        option('--phase-lengths', '-p', nargs=3, type=(TIMEDELTA, TIMEDELTA, TIMEDELTA), help=ARGUMENT_HELP_STRINGS['phase-lengths'] + ARGUMENT_HELP_STRINGS['time-delta-format'])
     ),
     OptionSpec(
         "nicknames",
@@ -146,7 +148,7 @@ GAME_UPDATE_OPTIONS: list[OptionSpec] = [
         option(
             '--scheduled-commands', '-s',
             multiple=True,
-            type=tuple[TIMEDELTA, str],
+            type=(TIMEDELTA, str),
             help=ARGUMENT_HELP_STRINGS['scheduled-commands'] + ARGUMENT_HELP_STRINGS['time-delta-format'])
     ),
 ]
@@ -161,15 +163,15 @@ def apply_options(option_specs: Iterable[OptionSpec]) -> Callable[[Callable], Ca
 
 def process_and_apply_game_updates(
     game: Game,
+    data: Data,
     adju_time: Optional[str] = None,
     adju_tz: Optional[str] = None,
     phase_lengths: Optional[tuple[dt.timedelta, dt.timedelta, dt.timedelta]] = None,
     nicknames: Optional[list[str]] = None,
     scheduled_commands: Optional[tuple[tuple[dt.timedelta, str], ...]] = None
 ):
-
     if nicknames is not None:
-        set_nicknames(nicknames)
+        _set_nicknames(data, game.name, nicknames)
         
 
     move_length, retreat_length, adjustment_length = phase_lengths if phase_lengths is not None else (None, None, None)
@@ -177,7 +179,7 @@ def process_and_apply_game_updates(
     commands = []
     if scheduled_commands is not None:
         for offset, command in scheduled_commands:
-            commands.append((offset, command, uuid.uuid1()))
+            commands.append(ScheduledCommand(offset, command, uuid.uuid4()))
 
     game.apply_updates(GameConfigUpdates(
         adju_time=adju_time,
@@ -190,7 +192,7 @@ def process_and_apply_game_updates(
 
 
 @cli.command()
-@argument('name', help="Full name of game")
+@argument('name')
 @apply_options(GAME_UPDATE_OPTIONS)
 def create_game(
     name: str,
@@ -206,17 +208,18 @@ def create_game(
         return
 
     game = Game(name)
-    process_and_apply_game_updates(game, adju_time, adju_tz, phase_lengths,nicknames, scheduled_commands)
+    process_and_apply_game_updates(game, data, adju_time, adju_tz, phase_lengths,nicknames, scheduled_commands)
     data.games[name] = game
 
     save_data(data)
 
 
 @cli.command()
-@argument('name', help=ARGUMENT_HELP_STRINGS["name"] + "delete")
+@argument('name')
 def delete_game(name: str):
     data = load_data()
     try:
+        name = data.get_game(name).name
         del data.games[name]
         echo(f"Deleted game {name}")
         nns_to_remove = []
@@ -241,13 +244,13 @@ def view_games():
 
 
 def format_timedelta(delta: dt.timedelta) -> str:
-    return "".join(str(increment) + abbr for increment, abbr in zip(
+    return "".join(str(increment) + abbr if increment != 0 else '' for increment, abbr in zip(
         [delta.days, delta.seconds // 3600, (delta.seconds // 60) % 60, delta.seconds % 60],
         ['d', 'h', 'm', 's']
     ))
 
 @cli.command()
-@argument('name', help=ARGUMENT_HELP_STRINGS["name"] + "view")
+@argument('name')
 def view_game(name: str):
     data = load_data()
     game = data.get_game(name)
@@ -262,11 +265,11 @@ def _output_game_view(data: Data, game: Game):
     if game.scheduled_commands:
         echo("Scheduled commands:")
         for command in game.scheduled_commands:
-            echo (f"\t{format_timedelta(command.offset)}: {command.command} {command.uuid.hex}")
+            echo (f"\t{format_timedelta(command.offset)}: {command.command} ({command.uuid.hex})")
 
 
 @cli.command()
-@argument('name', help=ARGUMENT_HELP_STRINGS["name"] + "edit")
+@argument('name')
 @apply_options(GAME_UPDATE_OPTIONS)
 def edit_game(
     name: str,
@@ -279,7 +282,7 @@ def edit_game(
     data = load_data()
     game = data.get_game(name)
 
-    process_and_apply_game_updates(game, adju_time, adju_tz, phase_lengths, nicknames, scheduled_commands)
+    process_and_apply_game_updates(game, data, adju_time, adju_tz, phase_lengths, nicknames, scheduled_commands)
 
     _output_game_view(data, game)
     save_data(data)
@@ -291,8 +294,8 @@ def _set_nicknames(data: Data, name: str, nicknames: list[str]):
 
 
 @cli.command()
-@argument('name', help=ARGUMENT_HELP_STRINGS['name'])
-@argument('nicknames', multiple=True, help=ARGUMENT_HELP_STRINGS['nicknames'])
+@argument('name')
+@argument('nicknames', nargs=-1)
 def set_nicknames(name: str, nicknames: list[str]):
     data = load_data()
     game = data.get_game(name)
@@ -316,25 +319,32 @@ def remove_nickname(nickname: str):
     del data.nicknames[nickname]
     save_data(data)
 
+
 @cli.command()
-@click.argument('game-name', type=str, help=ARGUMENT_HELP_STRINGS['name'])
-@click.argument('id', type=str, nargs=-1, help="ID of scheduled command(s) to remove")
+@click.argument('game-name')
+@click.argument('ids', type=str, nargs=-1)
 def remove_scheduled_command(game_name: str, ids: tuple[str, ...]):
     data = load_data()
     game = data.get_game(game_name)
-    for command_id in ids:
-        to_remove = []
-        for command in game.scheduled_commands:
-            if command.uuid.hex.startswith(command_id):
-                to_remove.append(command)
-        if len(to_remove) == 0:
-            echo(f"No command with id {command_id}")
-        elif len(to_remove) > 1:
-            echo(f"Ambiguous command id: {command_id}. Matches:")
-            for c in to_remove:
-                echo(f"\t{c.uuid}")
-        else:
-            game.scheduled_commands.remove(to_remove.pop())
+    if len(ids) == 1 and ids[0] == "all":
+        game.scheduled_commands = []
+    else: 
+        for command_id in ids:
+            to_remove = []
+            for command in game.scheduled_commands:
+                if command.uuid.hex.startswith(command_id):
+                    to_remove.append(command)
+            if len(to_remove) == 0:
+                echo(f"No command with id {command_id}")
+            elif len(to_remove) > 1:
+                echo(f"Ambiguous command id: {command_id}. Matches:")
+                for c in to_remove:
+                    echo(f"\t{c.uuid}")
+            else:
+                command = to_remove.pop()
+                game.scheduled_commands.remove(command)
+                echo(f"Removed {command.uuid.hex}")
+    save_data(data)
 
 
 def get_deadline(time_until: dt.timedelta, adju_time: str, adju_tz) -> dt.datetime:
@@ -353,15 +363,15 @@ def get_deadline(time_until: dt.timedelta, adju_time: str, adju_tz) -> dt.dateti
         minute=minute,
         tzinfo=ZoneInfo(adju_tz)
     )
-
+    echo(time_until)
     return target_time_today + time_until
 
 
 @cli.command()
 @argument('game_name')
-@argument('phase-key', type=str, help="Key for phase (spring/retreats/fall/retreats/winter: s/sr/f/fr/w)")
+@argument('phase-key', type=str)
 @argument('year', type=int)
-@option('--days-until', '-u', type=TIMEDELTA)
+@option('--time-until', '-u', type=TIMEDELTA, help="Total length of phase, assuming adjudication occurs today")
 @option('--no-window', '-n', is_flag=True)
 @option('--adju-time', '-t')
 def adju(*args, **kwargs):
@@ -406,13 +416,26 @@ def _adju(
     delta = (deadline - dt.datetime.now(ZoneInfo(game.adju_tz)))
     rendered_R = f"in {delta.days}d {delta.seconds // 3600}h {(delta.seconds//60)%60}m"
 
+    schedule = ".schedule"
+    for command in game.scheduled_commands:
+        if command.offset < time_until:
+            text = command.command
+            if "%s" in text:
+                text = text.replace("%s", discord_timestamp.format("F"))
+            execution_time = dt.datetime.fromtimestamp(timestamp) - command.offset
+            execution_time_string = f"<t:{int(execution_time.timestamp())}:F>"
+            schedule += f"\n{execution_time_string} {text}"
+    
+
+
     lines = [
         f"**{simple_title} has been adjudicated. The phase is now {following_title}.** Orders are due {timestamp_str}.",
         f"**{following_title.upper()}: {timestamp_str}**",
         f"**{game.name.upper()} {moves_title.upper()}**",
         f"**{game.name.upper()} {results_title.upper()}**",
         discord_timestamp.format('F'),
-        f"\nRendered timestamp:\n\t{rendered_F}\n\t{rendered_R}"
+        schedule,
+        f"\nRendered timestamp:\n\t{rendered_F}\n\t{rendered_R}",
     ]
 
     for line in lines:

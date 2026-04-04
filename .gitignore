@@ -2,4 +2,7 @@ data.pickle*
 .vscode
 dipgm.egg-info*
 build*
+.venv
+src
 venv
+__pycache__
