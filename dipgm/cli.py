@@ -423,6 +423,8 @@ def _adju(
             if "%s" in text:
                 text = text.replace("%s", discord_timestamp.format("F"))
             execution_time = dt.datetime.fromtimestamp(timestamp) - command.offset
+            if execution_time < dt.datetime.now() + dt.timedelta(hours=1):
+                continue
             execution_time_string = f"<t:{int(execution_time.timestamp())}:F>"
             schedule += f"\n{execution_time_string} {text}"
     
