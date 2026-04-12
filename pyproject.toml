@@ -16,4 +16,4 @@ dependencies = [
 dipgm = "dipgm.cli:cli"
 
 [tool.setuptools]
-packages = ["dipgm"]
+packages = ["dipgm", "dipgm.models"]
