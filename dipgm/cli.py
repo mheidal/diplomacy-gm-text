@@ -57,7 +57,7 @@ class Game(GameConfigDefaults):
             self.scheduled_commands.sort(key=lambda command: command.offset)
 
 @dataclass
-class AppData:
+class Data:
     games: dict[str, Game] = field(default_factory=dict)
     nicknames: dict[str, str] = field(default_factory=dict)
 
@@ -76,12 +76,12 @@ DATA_FILE = DATA_DIR / "data.pickle"
 
 
 def initialize_data():
-    data = AppData()
+    data = Data()
     with open(DATA_FILE, 'wb') as f:
         dump(data, f)
     return data
 
-def load_data() -> AppData:
+def load_data() -> Data:
     try:
         with open(DATA_FILE, 'rb') as f:
             data = load(f)
@@ -91,7 +91,7 @@ def load_data() -> AppData:
     except EOFError:
         return initialize_data()
 
-def save_data(data: AppData):
+def save_data(data: Data):
     with open(DATA_FILE, 'wb') as f:
         dump(data, f)
 
@@ -161,7 +161,7 @@ def apply_options(option_specs: Iterable[OptionSpec]) -> Callable[[Callable], Ca
 
 def process_and_apply_game_updates(
     game: Game,
-    data: AppData,
+    data: Data,
     adju_time: Optional[str] = None,
     adju_tz: Optional[str] = None,
     phase_lengths: Optional[tuple[dt.timedelta, dt.timedelta, dt.timedelta]] = None,
@@ -254,7 +254,7 @@ def view_game(name: str):
     game = data.get_game(name)
     _output_game_view(data, game)
 
-def _output_game_view(data: AppData, game: Game):
+def _output_game_view(data: Data, game: Game):
     echo(f"{game.name}, adju @ {game.adju_time} {game.adju_tz}")
     echo(f"\t-M/R/A: {format_timedelta(game.move_length)}/{format_timedelta(game.retreat_length)}/{format_timedelta(game.adjustment_length)}")
     for nickname, game_name in data.nicknames.items():
@@ -286,7 +286,7 @@ def edit_game(
     save_data(data)
 
 
-def _set_nicknames(data: AppData, name: str, nicknames: list[str]):
+def _set_nicknames(data: Data, name: str, nicknames: list[str]):
     for nickname in nicknames:
         data.nicknames[nickname] = name
 
