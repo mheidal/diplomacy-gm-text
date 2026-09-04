@@ -347,21 +347,21 @@ def remove_scheduled_command(game_name: str, ids: tuple[str, ...]):
     save_data(data)
 
 
-def get_deadline(time_until: dt.timedelta, adju_time: str, adju_tz) -> dt.datetime:
+def get_deadline(time_until: dt.timedelta, adju_time: str, adju_tz: ZoneInfo) -> dt.datetime:
     # Get the timestamp for this game's adjudication time, on the date `days_until` days from today
     # e.g. args=1, "14:00", ...; call at 13:50 1 Jan 2026 -> timestamp for 14:00 2 Jan 2026
     try:
         hour, minute = map(int, adju_time.split(':'))
     except:
         raise ValueError(f"Invalid timestamp: {adju_time}")
-    now = dt.datetime.now(tz=ZoneInfo(adju_tz))
+    now = dt.datetime.now(adju_tz)
     target_time_today = dt.datetime(
         year=now.year,
         month=now.month,
         day=now.day,
         hour=hour,
         minute=minute,
-        tzinfo=ZoneInfo(adju_tz)
+        tzinfo=adju_tz
     )
     echo(time_until)
     return target_time_today + time_until
@@ -391,6 +391,7 @@ def _adju(
     
     data = load_data()
     game = data.get_game(game_name)
+    tz = ZoneInfo(game.adju_tz)
 
     if time_until is None:
         match phase.nxt.phase_type:
@@ -401,42 +402,46 @@ def _adju(
     if adju_time is None:
         adju_time = game.adju_time
 
-    deadline = get_deadline(time_until, adju_time, game.adju_tz)
+    deadline = get_deadline(time_until, adju_time, tz)
     
-    timestamp = int(deadline.timestamp())
-    discord_timestamp = f"<t:{timestamp}:" + "{}>"
-    timestamp_str = f"{discord_timestamp.format('F')} {discord_timestamp.format('R')}"
+    deadline_timestamp = int(deadline.timestamp())
+    deadline_timestamp_discord_unformatted = f"<t:{deadline_timestamp}:" + "{}>"
+    deadline_timestamp_discord_formatted = f"{deadline_timestamp_discord_unformatted.format('F')} {deadline_timestamp_discord_unformatted.format('R')}"
 
     simple_title = phase.simple_title()
     following_title = phase.nxt.simple_title()
     moves_title = phase.moves_title()
     results_title = phase.results_title()
 
-    rendered_F = deadline.astimezone(ZoneInfo(game.adju_tz)).strftime('%A, %B %d, %Y %H:%M')
-    delta = (deadline - dt.datetime.now(ZoneInfo(game.adju_tz)))
+    rendered_F = deadline.astimezone(tz).strftime('%A, %B %d, %Y %H:%M')
+    delta = (deadline - dt.datetime.now(tz))
     rendered_R = f"in {delta.days}d {delta.seconds // 3600}h {(delta.seconds//60)%60}m"
 
     schedule = ".schedule"
+    print(f"Current timestamp is {dt.datetime.now().timestamp()}")
     for command in game.scheduled_commands:
-        if command.offset < time_until:
+        print(command.command, command.offset)
+        execution_time = dt.datetime.fromtimestamp(deadline_timestamp, tz=tz) - command.offset
+        if execution_time < deadline:
             text = command.command
             if "%s" in text:
-                text = text.replace("%s", discord_timestamp.format("F"))
-            execution_time = dt.datetime.fromtimestamp(timestamp) - command.offset
-            if execution_time < dt.datetime.now() + dt.timedelta(hours=1):
+                text = text.replace("%s", deadline_timestamp_discord_unformatted.format("F"))
+            print(f"{execution_time.timestamp()}\t{text}")
+            if execution_time < dt.datetime.now(tz) + dt.timedelta(hours=1):
                 continue
             execution_time_string = f"<t:{int(execution_time.timestamp())}:F>"
             schedule += f"\n{execution_time_string} {text}"
-    
-
 
     lines = [
-        f"**{simple_title} has been adjudicated. The phase is now {following_title}.** Orders are due {timestamp_str}.",
-        f"**{following_title.upper()}: {timestamp_str}**",
+        "**Orders locked.**",
+        f"**{simple_title} has been adjudicated. The phase is now {following_title}.** Orders are due {deadline_timestamp_discord_formatted}.",
+        f"**{following_title.upper()}: {deadline_timestamp_discord_formatted}**",
         f"**{game.name.upper()} {moves_title.upper()}**",
         f"**{game.name.upper()} {results_title.upper()}**",
-        discord_timestamp.format('F'),
+        deadline_timestamp_discord_unformatted.format('F'),
         schedule,
+        ".publish_orders",
+        f".set_deadline {deadline_timestamp_discord_unformatted.format('F')}",
         f"\nRendered timestamp:\n\t{rendered_F}\n\t{rendered_R}",
     ]
 

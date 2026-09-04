@@ -6,3 +6,4 @@ build*
 src
 venv
 __pycache__
+uv.lock
