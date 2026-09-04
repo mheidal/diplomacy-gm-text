@@ -452,16 +452,25 @@ def _adju(
     root = tk.Tk()
     root.title("Copy to Clipboard")
     
+    def get_handler(content: str, checkbox: tk.BooleanVar):
+        def handle_click(): 
+            root.clipboard_clear()
+            root.clipboard_append(content)
+            checkbox.set(not checkbox.get())
+        return handle_click
+
     for line in lines[:-1]:
         frame = tk.Frame(root)
         frame.pack(fill=tk.X, padx=5, pady=5)
-        checkbox = tk.Checkbutton(frame, variable=tk.BooleanVar())
+        checkbox_var = tk.BooleanVar()
+        checkbox = tk.Checkbutton(frame, variable=checkbox_var)
         checkbox.pack(side=tk.LEFT)
         
         label = tk.Label(frame, text=line, wraplength=400, justify=tk.LEFT)
         label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
         
-        button = tk.Button(frame, text="Copy", command=lambda l=line: root.clipboard_clear() or root.clipboard_append(l))
+        button = tk.Button(frame, text="Copy", command=get_handler(line, checkbox_var))
         button.pack(side=tk.RIGHT, padx=5)
 
     root.mainloop()
