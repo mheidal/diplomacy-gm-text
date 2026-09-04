@@ -57,7 +57,7 @@ class Game(GameConfigDefaults):
             self.scheduled_commands.sort(key=lambda command: command.offset)
 
 @dataclass
-class Data:
+class AppData:
     games: dict[str, Game] = field(default_factory=dict)
     nicknames: dict[str, str] = field(default_factory=dict)
 
@@ -75,26 +75,24 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATA_FILE = DATA_DIR / "data.pickle"
 
 
-def initialize_data(path: Path):
-    data = Data()
-    with open(path, 'wb') as f:
+def initialize_data():
+    data = AppData()
+    with open(DATA_FILE, 'wb') as f:
         dump(data, f)
     return data
 
-def load_data() -> Data:
-    path = DATA_FILE
+def load_data() -> AppData:
     try:
-        with open(path, 'rb') as f:
+        with open(DATA_FILE, 'rb') as f:
             data = load(f)
         return data
     except FileNotFoundError:
-        return initialize_data(path)
+        return initialize_data()
     except EOFError:
-        return initialize_data(path)
+        return initialize_data()
 
-def save_data(data: Data):
-    path = DATA_FILE
-    with open(path, 'wb') as f:
+def save_data(data: AppData):
+    with open(DATA_FILE, 'wb') as f:
         dump(data, f)
 
 def time_is_valid(time: str) -> bool:
@@ -163,7 +161,7 @@ def apply_options(option_specs: Iterable[OptionSpec]) -> Callable[[Callable], Ca
 
 def process_and_apply_game_updates(
     game: Game,
-    data: Data,
+    data: AppData,
     adju_time: Optional[str] = None,
     adju_tz: Optional[str] = None,
     phase_lengths: Optional[tuple[dt.timedelta, dt.timedelta, dt.timedelta]] = None,
@@ -256,7 +254,7 @@ def view_game(name: str):
     game = data.get_game(name)
     _output_game_view(data, game)
 
-def _output_game_view(data: Data, game: Game):
+def _output_game_view(data: AppData, game: Game):
     echo(f"{game.name}, adju @ {game.adju_time} {game.adju_tz}")
     echo(f"\t-M/R/A: {format_timedelta(game.move_length)}/{format_timedelta(game.retreat_length)}/{format_timedelta(game.adjustment_length)}")
     for nickname, game_name in data.nicknames.items():
@@ -288,7 +286,7 @@ def edit_game(
     save_data(data)
 
 
-def _set_nicknames(data: Data, name: str, nicknames: list[str]):
+def _set_nicknames(data: AppData, name: str, nicknames: list[str]):
     for nickname in nicknames:
         data.nicknames[nickname] = name
 
